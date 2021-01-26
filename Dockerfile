@@ -162,4 +162,4 @@ RUN chmod +x /opt/license_accepter.sh && /opt/license_accepter.sh $ANDROID_SDK_R
 
 
 # Change user back to go
-# USER go
+USER go

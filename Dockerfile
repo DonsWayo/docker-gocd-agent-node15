@@ -5,11 +5,9 @@ FROM gocd/gocd-agent-alpine-3.12:v20.10.0
 # Become root
 USER root
 
-
 #
 # Node
 #
-
 
 ENV NODE_VERSION 15.5.0
 
@@ -81,6 +79,9 @@ RUN addgroup -g 1001 node \
   && apk del .build-deps \
   # smoke tests
   && node --version \
+  && npm i -g cordova@10.0.0 \
+  && node i -g ios-deploy@1.11.4 \
+  && npm i -g @ionic/cli@6.12.3 \
   && npm --version
 
 ENV YARN_VERSION 1.22.5
@@ -104,8 +105,61 @@ RUN apk add --no-cache --virtual .build-deps-yarn curl gnupg tar \
   && apk del .build-deps-yarn \
   # smoke test
   && yarn --version
+  
+  ARG JDK_VERSION=8
+RUN dpkg --add-architecture i386 && \
+    apk add update && \
+    apk add dist-upgrade -y && \
+    apk add install -y --no-install-recommends libncurses5:i386 libc6:i386 libstdc++6:i386 lib32gcc1 lib32ncurses6 lib32z1 zlib1g:i386 && \
+    apk add install -y --no-install-recommends openjdk-${JDK_VERSION}-jdk && \
+    apk add install -y --no-install-recommends git wget unzip && \
+    apk add install -y --no-install-recommends qt5-default
+
+# download and install Gradle
+# https://services.gradle.org/distributions/
+ARG GRADLE_VERSION=6.7
+ARG GRADLE_DIST=bin
+RUN cd /opt && \
+    wget -q https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-${GRADLE_DIST}.zip && \
+    unzip gradle*.zip && \
+    ls -d */ | sed 's/\/*$//g' | xargs -I{} mv {} gradle && \
+    rm gradle*.zip
+
+# download and install Kotlin compiler
+# https://github.com/JetBrains/kotlin/releases/latest
+ARG KOTLIN_VERSION=1.4.10
+RUN cd /opt && \
+    wget -q https://github.com/JetBrains/kotlin/releases/download/v${KOTLIN_VERSION}/kotlin-compiler-${KOTLIN_VERSION}.zip && \
+    unzip *kotlin*.zip && \
+    rm *kotlin*.zip
+
+# download and install Android SDK
+# https://developer.android.com/studio#command-tools
+ARG ANDROID_SDK_VERSION=6858069
+ENV ANDROID_SDK_ROOT /opt/android-sdk
+RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_SDK_VERSION}_latest.zip && \
+    unzip *tools*linux*.zip -d ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    mv ${ANDROID_SDK_ROOT}/cmdline-tools/cmdline-tools ${ANDROID_SDK_ROOT}/cmdline-tools/tools && \
+    rm *tools*linux*.zip
+
+# set the environment variables
+ENV JAVA_HOME /usr/lib/jvm/java-${JDK_VERSION}-openjdk-amd64
+ENV GRADLE_HOME /opt/gradle
+ENV KOTLIN_HOME /opt/kotlinc
+ENV PATH ${PATH}:${GRADLE_HOME}/bin:${KOTLIN_HOME}/bin:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/cmdline-tools/tools/bin:${ANDROID_SDK_ROOT}/platform-tools:${ANDROID_SDK_ROOT}/emulator
+ENV _JAVA_OPTIONS -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap
+# WORKAROUND: for issue https://issuetracker.google.com/issues/37137213
+ENV LD_LIBRARY_PATH ${ANDROID_SDK_ROOT}/emulator/lib64:${ANDROID_SDK_ROOT}/emulator/lib64/qt/lib
+# patch emulator issue: Running as root without --no-sandbox is not supported. See https://crbug.com/638180.
+# https://doc.qt.io/qt-5/qtwebengine-platform-notes.html#sandboxing-support
+ENV QTWEBENGINE_DISABLE_SANDBOX 1
+
+# accept the license agreements of the SDK components
+ADD license_accepter.sh /opt/
+RUN chmod +x /opt/license_accepter.sh && /opt/license_accepter.sh $ANDROID_SDK_ROOT
 
 
 
 # Change user back to go
-USER go
+# USER go
